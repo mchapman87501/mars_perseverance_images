@@ -14,9 +14,9 @@ You may be able to build and install the package.  As this is really a pile of e
 
 These started out as unit tests ;)  But this is a pile of exploratory hacks.  I'd recommend doing the following:
 
-1. Make sure you can import the `band_finder` package
-2. cd into the `examples` directory
-3. `python populate_db.py` to create a local database of image metadata
+1. Make sure you can import the `band_finder` package.
+2. cd into the `examples` directory.
+3. `python populate_db.py` to create a local database of image metadata.
 4. `python auto_create_rgbs.py` to automatically assemble color images from
    the right Navcam.
 
