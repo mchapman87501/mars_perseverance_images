@@ -18,6 +18,8 @@ def main():
     while True:
         params = get_rqst_params(page=page, num=1000)
         json_info = get_img_metadata(params)
+        Path(f"rss_feed_{page}.json").write_text(
+            json.dumps(json_info, indent=4))
         records = json_info["images"]
         if not records:
             break

@@ -22,7 +22,13 @@ The subsequent four digit number may indicate mission date -- sol.
 
 That's enough guessing for now...
 
+## Planetary Data Science Data Dictionary
+
+The PDS website has documentation for common metadata names.  Go to [https://pds.nasa.gov](https://pds.nasa.gov), select `TOOLS`, select `DATA DICTIONARY`, and then search for the field (e.g., `image_id`) of interest.
 ## Details of the Imaging System
+
+An overview of the cameras on the Perseverance Rover is available [from NASA](https://mars.nasa.gov/mars2020/spacecraft/rover/cameras/).
+
 
 A description of the cameras on the Perseverance Rover is available from ResearchGate: [The Mars 2020 Engineering Cameras and Microphone on the Perseverance Rover: A Next-Generation Imaging System for Mars Exploration](https://www.researchgate.net/publication/346537343_The_Mars_2020_Engineering_Cameras_and_Microphone_on_the_Perseverance_Rover_A_Next-Generation_Imaging_System_for_Mars_Exploration/link/5fc675c9a6fdcc92169e4d1e/download).
 
@@ -32,3 +38,26 @@ A description of the cameras on the Perseverance Rover is available from Researc
 
 Hm, it should be possible to build stereo images:
 > The Navcams have a 42.4 cm stereo baseline.
+
+## Time Specifications
+
+The RSS image metadata records include an "sclk" field.  Its semantics are [explained here](https://forum.nasaspaceflight.com/index.php?PHPSESSID=5uuths3p440tb74n4gebtofd7s&topic=38208.msg2194630#msg2194630).
+
+> To convert from spacecraft clock (SCLK) to UTC or other dates you can use this page ([webgeocalc](https://wgc.jpl.nasa.gov:8443/webgeocalc/#TimeConversion)), which relies upon NAIF SCLK kernels:
+>
+> https://naif.jpl.nasa.gov/pub/naif/MARS2020/kernels/sclk/m2020.tsc
+> https://naif.jpl.nasa.gov/pub/naif/MARS2020/kernels/sclk/M2020_168_SCLKSCET.00006.tsc
+>
+> You must specify:
+> Kernels: manual selection --> MARS2020/kernels/sclk  --> most recent
+> Spacecraft id: -168
+> Time system: spacecraft clock
+> Time format: spacecraft clock string
+> Time: the string (e.g 0666958242)
+>
+> Result is: 2021-02-18 22:12:12.483513 UTC
+>
+>
+>
+> For quick calculation, you can see in https://naif.jpl.nasa.gov/pub/naif/MARS2020/kernels/sclk/M2020_168_SCLKSCET.00006.tsc that 0000000000.000 means 2000-001T11:58:55.816 , i.e. approximately 2001/01/01 12:00
+> But beware that the spacecraft  clock could reset to 0 at anytime for unpredictable reasons; that's why we have SPICE kernels which keep track of any change in spacecraft clock.
