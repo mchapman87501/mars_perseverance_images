@@ -4,8 +4,11 @@ Suss out how to identify NAVCAM images that constitute
 a panorama.
 """
 
-from PIL import Image
 import re
+
+import cv2
+from PIL import Image
+import numpy as np
 
 from band_finder.image_db import ImageDB
 from band_finder.image_cache import ImageCache
@@ -156,13 +159,21 @@ class PanoStitcher:
         size = tuple(img_rect[2:])
         result = Image.new("RGB", size)
         for rec in img_info:
-            tile_img = rec.img.convert("RGB")
+            tile_img = self._prepare_tile_image(rec.img)
             dest_rect = rec.rect
             print("  Tile", dest_rect)
             # XXX FIX THIS should use the full dest_rect.
             dest_origin = dest_rect[:2]
             result.paste(tile_img, dest_origin)
         return result
+
+    def _prepare_tile_image(self, tile_img):
+        # Cop out - use someone else's demosaicing algorithms.
+        # https://gist.github.com/bbattista/8358ccafecf927ae1c58c944ab470ffb
+        bayer = np.asarray(tile_img.convert("L"), dtype=np.uint16)
+        demosaic = cv2.cvtColor(bayer, cv2.COLOR_BAYER_BG2RGB)
+        demo8bit = demosaic.astype(np.uint8)
+        return Image.fromarray(demo8bit)
 
 
 def main():
