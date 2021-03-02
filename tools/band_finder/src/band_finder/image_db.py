@@ -193,7 +193,6 @@ class ImageDB:
             return tuple([None] * num_fields)
         expr = re.compile(r"^\((.*)\)$")
         if m := expr.match(val_str):
-            print("Parsing tuple:", m.group(1))
             fields = [converter(f) for f in m.group(1).split(",")]
             if len(fields) == num_fields:
                 return tuple(fields)
