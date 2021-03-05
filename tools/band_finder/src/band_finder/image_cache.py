@@ -27,7 +27,6 @@ class ImageCache:
         result = self._image_from_cache(image_id)
         if result is None:
             result = self._retrieve_image(image_id)
-            self._cache_image(image_id, result)
         return result
 
     def _retrieve_image(self, image_id):
@@ -38,13 +37,11 @@ class ImageCache:
             req = requests.get(url, allow_redirects=True)
             req.raise_for_status()
 
-            img_data = io.BytesIO(req.content)
-            return Image.open(img_data)
-
-    def _cache_image(self, image_id, image):
-        if not self._cache_dir.is_dir():
-            self._cache_dir.mkdir(parents=True)
-        image.save(self._cached_path(image_id))
+            img_data_io = io.BytesIO(req.content)
+            out_path = self._cached_path(image_id)
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            out_path.write_bytes(img_data_io.read())
+            return Image.open(out_path)
 
     def _image_from_cache(self, image_id):
         img_path = self._cached_path(image_id)

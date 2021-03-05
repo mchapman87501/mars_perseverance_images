@@ -1,5 +1,9 @@
 # How are Perseverance images named?
 
+[Emily Lakdawalla](https://twitter.com/elakdawalla) has [written up the details](https://www.patreon.com/posts/48263650).  She did this for free, but appreciative onlookers can put cash in the hat via her [Patreon page](https://www.patreon.com/elakdawalla).
+
+## Older Notes
+
 So far I've looked only at Navcam images.  Here are some example Navcam image IDs:
 
 * NRB_0002_0667129587_774ECM_N0010052AUT_04096_00_2I3J01

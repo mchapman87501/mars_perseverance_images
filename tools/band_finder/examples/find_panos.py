@@ -4,7 +4,9 @@ Suss out how to identify NAVCAM images that constitute
 a panorama.
 """
 
+from pathlib import Path
 import re
+import traceback
 
 import cv2
 from PIL import Image
@@ -12,11 +14,12 @@ import numpy as np
 
 from band_finder.image_db import ImageDB
 from band_finder.image_cache import ImageCache
+from band_finder.tile_brightness_matcher import TileBrightnessMatcher
 
 
-# TODO use type annotations and datarecord.
 class PanoImageInfo:
-    def __init__(self, img, rect):
+    def __init__(self, image_id, img, rect):
+        self.image_id = image_id
         self.img = img
         self.rect = rect
 
@@ -47,10 +50,10 @@ class PanoImageSet:
     def gen_images(self, image_cache):
         for rec in self._records:
             # Metadata origin is at (1, 1).
-            image_frect = (rec["x"] - 1, rec["y"] - 1, rec["w"], rec["h"])
-            image_rect = tuple(int(f) for f in image_frect)
-            img = image_cache.get_image(rec["image_id"])
-            yield PanoImageInfo(img, image_rect)
+            image_id = rec["image_id"]
+            img = image_cache.get_image(image_id)
+            rect = self._get_rect(rec)
+            yield PanoImageInfo(image_id, img, rect)
 
     def name(self):
         return self._name
@@ -58,13 +61,17 @@ class PanoImageSet:
     def rect(self):
         x0 = y0 = xf = yf = 0
         for rec in self._records:
-            # Metadata origin is at (1, 1).
-            x, y = rec["x"] - 1, rec["y"] - 1
+            x, y, w, h = self._get_rect(rec)
             x0 = min(x0, x)
             y0 = min(y0, y)
             xf = max(xf, x + rec["w"])
             yf = max(yf, y + rec["h"])
         return (int(x0), int(y0), int(xf - x0), int(yf - y0))
+
+    def _get_rect(self, rec):
+        x, y, w, h = rec["x"], rec["y"], rec["w"], rec["h"]
+        # Metadata origin is at (1, 1).
+        return tuple([int(f) for f in (x - 1, y - 1, w, h)])
 
 
 class PanoFinder:
@@ -73,10 +80,7 @@ class PanoFinder:
     def __init__(self, db):
         self._db = db
 
-    def _left_navcam_images(self):
-        return list(self._gen_left_navcam_images())
-
-    def _gen_left_navcam_images(self):
+    def _gen_cam_images(self, which_cam):
         query = """
         SELECT
           site, drive, ext_sclk,
@@ -92,13 +96,17 @@ class PanoFinder:
           -- ext_width, ext_height,
           image_id
         FROM Images
-        WHERE cam_instrument = 'NAVCAM_LEFT'
+        WHERE cam_instrument = ?
           AND sample_type = 'Full'
           AND ext_scale_factor = 1.0
+          AND x NOT NULL
+          AND y NOT NULL
+          AND w NOT NULL
+          and h NOT NULL
         ORDER BY site, drive, ext_sclk, image_id
         """
         to_tuple = self._as_num_tuple
-        for row in self._db.cursor().execute(query):
+        for row in self._db.cursor().execute(query, (which_cam,)):
             result = dict((key, row[key]) for key in row.keys())
             # result['cam_position'] = to_tuple(row['cam_position'])
             # result['attitude'] = to_tuple(row['attitude'])
@@ -112,10 +120,10 @@ class PanoFinder:
             return tuple(fields)
         return value_str
 
-    def gen_image_sets(self):
+    def gen_image_sets(self, which_cam):
         prev_sclk = None
         curr_set = []
-        for record in self._gen_left_navcam_images():
+        for record in self._gen_cam_images(which_cam):
             sclk = record["ext_sclk"]
             if sclk != prev_sclk:
                 if len(curr_set) > 1:
@@ -135,39 +143,55 @@ class PanoStitcher:
     Initial implementation does not care whether the source images are
     color components or full raster readouts.
     """
-    def __init__(self, db):
+    def __init__(self, db, which_cam):
         self._db = db
+        self._which_cam = which_cam
         self._finder = PanoFinder(db)
         self._cache = ImageCache(db)
 
     def _get_pano_image_sets(self):
         return [
             PanoImageSet.from_records(recs)
-            for recs in self._finder.gen_image_sets()
+            for recs in self._finder.gen_image_sets(self._which_cam)
         ]
 
     def build_all(self):
+        outdir = Path("panoramas")
+        outdir.mkdir(exist_ok=True, parents=True)
         for img_set in self._get_pano_image_sets():
-            print("Building", img_set.name())
-            pano = self._build_image(img_set)
-            pano.save(f"{img_set.name()}.png")
+            full_name = f"{img_set.name()}_{self._which_cam}"
+            print("Building", full_name)
+            try:
+                pano = self._build_image(img_set)
+                pano.save(outdir / f"{full_name}.png")
+            except Exception as info:
+                traceback.print_exc()
+                print(f"Failed building {full_name}: {info}")
 
     def _build_image(self, img_set):
         img_info = list(img_set.gen_images(self._cache))
         img_rect = img_set.rect()
-        print("  Image", img_rect)
         size = tuple(img_rect[2:])
-        result = Image.new("RGB", size)
+
+        matcher = TileBrightnessMatcher()
         for rec in img_info:
-            tile_img = self._prepare_tile_image(rec.img)
-            dest_rect = rec.rect
-            print("  Tile", dest_rect)
-            # XXX FIX THIS should use the full dest_rect.
-            dest_origin = dest_rect[:2]
-            result.paste(tile_img, dest_origin)
+            img_rect = rec.rect[:2]
+            rgb_image = self._prepare_tile_image(rec)
+            matcher.add(rgb_image, origin=rec.rect[:2])
+
+        result = matcher.composite()
         return result
 
-    def _prepare_tile_image(self, tile_img):
+    def _prepare_tile_image(self, rec):
+        # This assumes the image needs to be demosaiced - but that is
+        # true only if the metadata's image_id has "E" as its third 
+        # character.
+        #
+        # "F" images appear to be already de-mosaiced.
+        if rec.image_id[2:3] == "F":
+            return rec.img
+
+        tile_img = rec.img
         # Cop out - use someone else's demosaicing algorithms.
         # https://gist.github.com/bbattista/8358ccafecf927ae1c58c944ab470ffb
         bayer = np.asarray(tile_img.convert("L"), dtype=np.uint16)
@@ -179,8 +203,9 @@ class PanoStitcher:
 def main():
     """Mainline for standalone execution."""
     db = ImageDB()
-    stitcher = PanoStitcher(db)
-    stitcher.build_all()
+    for cam in db.cameras():
+        stitcher = PanoStitcher(db, cam)
+        stitcher.build_all()
 
 
 if __name__ == "__main__":

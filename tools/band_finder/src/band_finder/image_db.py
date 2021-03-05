@@ -208,13 +208,13 @@ class ImageDB:
         return self._conn.cursor()
 
     def cameras(self):
-        query = "SELECT DISTINCT camera_instrument FROM Images"
+        query = "SELECT DISTINCT cam_instrument FROM Images"
         return [row[0] for row in self._conn.cursor().execute(query)]
 
     def images_for_camera(self, camera, thumbnails=False):
         # Props to SQLAlchemy et al for their way of building queries
         # in code.
-        instr_clause = "camera_instrument = ?"
+        instr_clause = "cam_instrument = ?"
         tn_clause = "sample_type = ?"
         clauses = [
             c for c in [instr_clause, tn_clause]
