@@ -11,6 +11,7 @@ jupyterlab ~= 3.0
 ipympl ~= 0.6
 nodejs ~= 0.1
 
+
 # For testing, formatting and refactoring:
 black ~= 20.8b1
 flake8 ~= 3.8

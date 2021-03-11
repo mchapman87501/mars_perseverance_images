@@ -124,7 +124,7 @@ class PanoStitcher:
         for chan, cmin, cmax, stretch in [
             [0, 0.0, 100.0, True],
             [1, -127.0, 128.0, False],
-            [2, -127.0, 128.0, False],
+            [2, -128.0, 127.0, False],
         ]:
             self._rescale_channel(result, chan, cmin, cmax, stretch)
         return result

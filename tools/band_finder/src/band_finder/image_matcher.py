@@ -8,7 +8,7 @@ import numpy as np
 
 
 class ChannelAdjuster:
-    def __init__(self, src_sample, target_sample, channel):
+    def __init__(self, src_sample, target_sample, channel, vmin, vmax):
         src = src_sample.astype(np.float64)
         targ = target_sample.astype(np.float64)
 
@@ -19,7 +19,11 @@ class ChannelAdjuster:
         for s, t in zip(src_values, targ_values):
             samples.setdefault(s, []).append(t)
 
-        value_map = dict()
+        # Default the left and right edges to the channel extreme values.
+        value_map = {
+            vmin: vmin,
+            vmax: vmax
+        }
         for s, tvals in samples.items():
             value_map[s] = np.mean(tvals)
 
@@ -32,9 +36,8 @@ class ChannelAdjuster:
 
     def adjust(self, image_data):
         values = image_data[:, :, self._channel]
-        image_data[:, :, self._channel] = np.interp(
-            values, self._osrc, self._otarg
-        )
+        new_values = np.interp(values, self._osrc, self._otarg)
+        image_data[:, :, self._channel] = new_values
 
 
 class ImageMatcher:
@@ -62,8 +65,17 @@ class ImageMatcher:
         src = src_sample.astype(np.float64)
         targ = target_sample.astype(np.float64)
 
+        # Assume Lab channels.
+        # TODO let caller specify this, perhaps via a class method.
+        # This same information is encoded in find_pano.
+        chan_info = [
+            [0, 0.0, 100.0],
+            [1, -127.0, 128.0],
+            [2, -128.0, 127.0]
+        ]
         self._adjusters = [
-            ChannelAdjuster(src, targ, channel) for channel in [0, 1, 2]
+            ChannelAdjuster(src, targ, channel, vmin, vmax)
+            for channel, vmin, vmax in chan_info
         ]
 
     def adjusted(self, src_image):
