@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS Images (
     ext_sf_width REAL,
     ext_sf_height REAL,
 
-    -- dimension: (width, height), appears to be img size in pixels
+    -- dimension: (width, height), appears to be image size in pixels
     ext_width REAL,
     ext_height REAL
 );
@@ -67,13 +67,15 @@ CREATE TABLE IF NOT EXISTS Images (
 
 class ImageDB:
     # Database file is created relative to current working dir.
-    _db_path = Path("mars_perseverance_image_info.db")
+    _default_db_path = Path("mars_perseverance_image_info.db")
 
-    def __init__(self):
+    def __init__(self, db_path=None):
+        self._db_path = db_path or self._default_db_path
+
         self._conn = sqlite3.connect(
             str(self._db_path),
             isolation_level=None,
-            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
         )
         self._conn.row_factory = sqlite3.Row
         self._init_schema()
@@ -133,39 +135,38 @@ class ImageDB:
         ext = record["extended"]
         x, y, z = self._opt_float_tuple(ext["xyz"], 3)
         w, h = self._opt_float_tuple(ext["dimension"], 2)
-        sf_l, sf_t, sf_w, sf_h = self._opt_int_tuple(
-            ext["subframeRect"], 4)
+        sf_l, sf_t, sf_w, sf_h = self._opt_int_tuple(ext["subframeRect"], 4)
 
         values = dict(
             image_id=record["imageid"],
             credit=record["credit"],
             caption=record["caption"],
             title=record["title"],
-
             cam_instr=record["camera"]["instrument"],
             cam_filter=record["camera"]["filter_name"],
             cam_comp_list=record["camera"]["camera_model_component_list"],
             cam_model_type=record["camera"]["camera_model_type"],
             cam_pos=record["camera"]["camera_position"],
-
             sample_type=record["sample_type"],
             json_url=record["json_link"],
             image_url=record["image_files"]["full_res"],
-
             attitude=record["attitude"],
             drive=self._opt_int(record["drive"]),
             site=self._opt_int(record["site"]),
-
             date_taken=self._timestamp(record["date_taken_utc"]),
-
             ext_mast_az=self._opt_float(ext["mastAz"]),
             ext_mast_el=self._opt_float(ext["mastEl"]),
             ext_sclk=self._opt_float(ext["sclk"]),
             ext_scale_fact=self._opt_float(ext["scaleFactor"]),
-
-            ext_x=x, ext_y=y, ext_z=z,
-            ext_sf_l=sf_l, ext_sf_t=sf_t, ext_sf_w=sf_w, ext_sf_h=sf_h,
-            ext_w=w, ext_h=h,
+            ext_x=x,
+            ext_y=y,
+            ext_z=z,
+            ext_sf_l=sf_l,
+            ext_sf_t=sf_t,
+            ext_sf_w=sf_w,
+            ext_sf_h=sf_h,
+            ext_w=w,
+            ext_h=h,
         )
 
         cursor.execute(query.strip(), values)
@@ -175,8 +176,7 @@ class ImageDB:
             return datetime.datetime.fromisoformat(timestamp_str)
         except ValueError:
             return datetime.datetime.strptime(
-                timestamp_str,
-                "%Y-%m-%dT%H:%M:%SZ"
+                timestamp_str, "%Y-%m-%dT%H:%M:%SZ"
             )
 
     def _opt_val(self, val_str, converter):
@@ -216,10 +216,7 @@ class ImageDB:
         # in code.
         instr_clause = "cam_instrument = ?"
         tn_clause = "sample_type = ?"
-        clauses = [
-            c for c in [instr_clause, tn_clause]
-            if c.strip()
-        ]
+        clauses = [c for c in [instr_clause, tn_clause] if c.strip()]
         where_clause = " AND ".join(clauses)
         query = "SELECT * FROM Images WHERE " + where_clause
         sample_type = "Thumbnail" if thumbnails else "Full"

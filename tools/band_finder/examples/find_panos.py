@@ -4,24 +4,31 @@ Suss out how to identify NAVCAM images that constitute
 a panorama.
 """
 
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 import re
 import traceback
 
-import cv2
-from PIL import Image
 import numpy as np
+from skimage import io, color
+from skimage.util import img_as_ubyte
 
 from band_finder.image_db import ImageDB
 from band_finder.image_cache import ImageCache
-from band_finder.tile_brightness_matcher import TileBrightnessMatcher
+from band_finder.tile_matcher import TileMatcher
+from band_finder.bayer_to_rgb import bayer_to_rgb
 
 
 class PanoImageInfo:
-    def __init__(self, image_id, img, rect):
+    def __init__(self, image_id, image, rect):
         self.image_id = image_id
-        self.img = img
+        self.image = image
         self.rect = rect
+
+    def is_bayer(self):
+        # Images whose image_id has "E" as its third character
+        # are raw sensor readouts that need to be de-mosaiced.
+        return self.image_id[2:3] == "E"
 
 
 class PanoImageSet:
@@ -51,9 +58,9 @@ class PanoImageSet:
         for rec in self._records:
             # Metadata origin is at (1, 1).
             image_id = rec["image_id"]
-            img = image_cache.get_image(image_id)
+            image = image_cache.get_image(image_id)
             rect = self._get_rect(rec)
-            yield PanoImageInfo(image_id, img, rect)
+            yield PanoImageInfo(image_id, image, rect)
 
     def name(self):
         return self._name
@@ -74,6 +81,67 @@ class PanoImageSet:
         return tuple([int(f) for f in (x - 1, y - 1, w, h)])
 
 
+class PanoStitcher:
+    """
+    PanoStitcher stitches a single PanoImageSet.
+    """
+    def __init__(self):
+        self._db = ImageDB()
+        self._cache = ImageCache(self._db)
+
+    def build_image(self, image_set):
+        """Build a panoramic image from a set of image tiles.
+
+        Args:
+            image_set (PanoImageSet): the set of images to stitch together
+
+        Returns:
+            np.array: The panorama image
+        """
+        pano_tiles = list(image_set.gen_images(self._cache))
+
+        matcher = TileMatcher(image_set.name())
+        # is_bayer = False
+        for rec in pano_tiles:
+            bmsg = "(bayer)" if rec.is_bayer else ""
+            print(f"Tile {rec.image_id} {rec.rect} {bmsg}")
+            image = bayer_to_rgb(rec.image) if rec.is_bayer() else rec.image
+            # Work in Lab color.
+            image = color.rgb2lab(image)
+            matcher.add(image, origin=rec.rect[:2])
+
+        composite = matcher.composite()
+        result = img_as_ubyte(color.lab2rgb(self._rescaled(composite)))
+        return result
+
+    def _rescaled(self, image):
+        # Rescale image data as necessary to fit within the Lab
+        # colorspace.
+        result = image.copy()
+        # From one of the scikit-image maintainers (I think):
+        # https://stackoverflow.com/a/28048090
+        # https://github.com/scikit-image/scikit-image/issues/1185
+        for chan, cmin, cmax, stretch in [
+            [0, 0.0, 100.0, True],
+            [1, -127.0, 128.0, False],
+            [2, -127.0, 128.0, False],
+        ]:
+            self._rescale_channel(result, chan, cmin, cmax, stretch)
+        return result
+
+    def _rescale_channel(self, image, channel, min_valid, max_valid, stretch):
+        values = image[:, :, channel]
+        max_in = np.max(values)
+        min_in = np.min(values)
+
+        if stretch or ((max_in > max_valid) or (min_in < min_valid)):
+            d_in = max_in - min_in
+            d_out = max_valid - min_valid
+            scale = d_out / d_in
+            values = (values - min_in) * scale + min_valid
+            image[:, :, channel] = values
+
+
 class PanoFinder:
     _tuple_expr = re.compile(r"^\((?P<fields>([\d.+-]+,?)+)\)")
 
@@ -84,16 +152,8 @@ class PanoFinder:
         query = """
         SELECT
           site, drive, ext_sclk,
-          -- cam_model_component_list,
-          -- cam_position,
-          -- date_taken_utc,
-          -- attitude,
-          -- ext_mast_azimuth, ext_mast_elevation,
-          -- ext_scale_factor,
-          -- ext_x, ext_y, ext_z,
           ext_sf_left x, ext_sf_top y,
           ext_sf_width w, ext_sf_height h,
-          -- ext_width, ext_height,
           image_id
         FROM Images
         WHERE cam_instrument = ?
@@ -105,20 +165,12 @@ class PanoFinder:
           and h NOT NULL
         ORDER BY site, drive, ext_sclk, image_id
         """
-        to_tuple = self._as_num_tuple
         for row in self._db.cursor().execute(query, (which_cam,)):
             result = dict((key, row[key]) for key in row.keys())
             # result['cam_position'] = to_tuple(row['cam_position'])
             # result['attitude'] = to_tuple(row['attitude'])
             # result['date_taken_utc'] = row['date_taken_utc'].isoformat()
             yield result
-
-    def _as_num_tuple(self, value_str):
-        # pycodestyle does not understand walrus?
-        if m := self._tuple_expr.match(value_str):
-            fields = [float(f) for f in m.group("fields").split(",")]
-            return tuple(fields)
-        return value_str
 
     def gen_image_sets(self, which_cam):
         prev_sclk = None
@@ -135,7 +187,30 @@ class PanoFinder:
             yield curr_set
 
 
-class PanoStitcher:
+def stitch_set(args):
+    """
+    Stitch an image set.
+    This is intended for use with multiprocessing, or with a
+    concurrent.futures Exector.
+
+    Args:
+        args: a tuple of (image set, camera name, output directory)
+    """
+    try:
+        image_set, cam, outdir = args
+        full_name = f"{image_set.name()}_{cam}"
+
+        print("Building", full_name)
+
+        stitcher = PanoStitcher()
+        pano = stitcher.build_image(image_set)
+        io.imsave(outdir / f"{full_name}.png", pano)
+    except Exception as info:
+        traceback.print_exc()
+        print(f"Failed stitching set: {info}")
+
+
+class CamPanoStitcher:
     """
     PanoStitcher assembles a panorama from a given set of image records.
     It positions constituent images based on their ext_sf_* coords.
@@ -143,6 +218,7 @@ class PanoStitcher:
     Initial implementation does not care whether the source images are
     color components or full raster readouts.
     """
+
     def __init__(self, db, which_cam):
         self._db = db
         self._which_cam = which_cam
@@ -158,54 +234,23 @@ class PanoStitcher:
     def build_all(self):
         outdir = Path("panoramas")
         outdir.mkdir(exist_ok=True, parents=True)
-        for img_set in self._get_pano_image_sets():
-            full_name = f"{img_set.name()}_{self._which_cam}"
-            print("Building", full_name)
-            try:
-                pano = self._build_image(img_set)
-                pano.save(outdir / f"{full_name}.png")
-            except Exception as info:
-                traceback.print_exc()
-                print(f"Failed building {full_name}: {info}")
 
-    def _build_image(self, img_set):
-        img_info = list(img_set.gen_images(self._cache))
-        img_rect = img_set.rect()
-        size = tuple(img_rect[2:])
+        cam = self._which_cam
+        image_sets = self._get_pano_image_sets()
 
-        matcher = TileBrightnessMatcher()
-        for rec in img_info:
-            img_rect = rec.rect[:2]
-            rgb_image = self._prepare_tile_image(rec)
-            matcher.add(rgb_image, origin=rec.rect[:2])
-
-        result = matcher.composite()
-        return result
-
-    def _prepare_tile_image(self, rec):
-        # This assumes the image needs to be demosaiced - but that is
-        # true only if the metadata's image_id has "E" as its third 
-        # character.
-        #
-        # "F" images appear to be already de-mosaiced.
-        if rec.image_id[2:3] == "F":
-            return rec.img
-
-        tile_img = rec.img
-        # Cop out - use someone else's demosaicing algorithms.
-        # https://gist.github.com/bbattista/8358ccafecf927ae1c58c944ab470ffb
-        bayer = np.asarray(tile_img.convert("L"), dtype=np.uint16)
-        demosaic = cv2.cvtColor(bayer, cv2.COLOR_BAYER_BG2RGB)
-        demo8bit = demosaic.astype(np.uint8)
-        return Image.fromarray(demo8bit)
+        args = [(image_set, cam, outdir) for image_set in image_sets]
+        print("Number of image sets:", len(args))
+        with ProcessPoolExecutor() as executor:
+            executor.map(stitch_set, args)
+        print("Done processing image sets.")
 
 
 def main():
     """Mainline for standalone execution."""
     db = ImageDB()
     for cam in db.cameras():
-        stitcher = PanoStitcher(db, cam)
-        stitcher.build_all()
+        cam_stitcher = CamPanoStitcher(db, cam)
+        cam_stitcher.build_all()
 
 
 if __name__ == "__main__":

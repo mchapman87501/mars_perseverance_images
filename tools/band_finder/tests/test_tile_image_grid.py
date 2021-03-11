@@ -6,8 +6,11 @@ import pytest
 
 def test_init():
     tbo = {
-        (0, 0): "a",   (1024, 0): "b", (2048, 0): "c",
-        (0, 960): "d",                 (2048, 960): "e"
+        (0, 0): "a",
+        (1024, 0): "b",
+        (2048, 0): "c",
+        (0, 960): "d",
+        (2048, 960): "e",
     }
     grid = TileImageGrid(tbo)
     assert grid is not None
@@ -22,11 +25,13 @@ def test_init():
 
 def _get_test_grid():
     tbo = {
-        (0, 0): np.array([
-            [0.0, 0.0, 0.0, 1.0],
-            [3.0, 4.0, 4.0, 1.0],
-            [3.0, 2.0, 2.0, 2.0],
-        ]),
+        (0, 0): np.array(
+            [
+                [0.0, 0.0, 0.0, 1.0],
+                [3.0, 4.0, 4.0, 1.0],
+                [3.0, 2.0, 2.0, 2.0],
+            ]
+        ),
     }
     return TileImageGrid(tbo)
 
@@ -75,7 +80,7 @@ def overlapping_grid():
     for ix in range(3):
         y = 0
         for iy in range(3):
-            value = ix*ix + iy*iy
+            value = ix * ix + iy * iy
             tbo[(x, y)] = np.full(tile_shape, value)
             print("Tile", (x, y), "=", tile_shape, "x", value)
 
@@ -94,9 +99,7 @@ overlap_edge_values_test_data = [
 ]
 
 
-@pytest.mark.parametrize(
-    "x, y, edge, expected", overlap_edge_values_test_data
-)
+@pytest.mark.parametrize("x, y, edge, expected", overlap_edge_values_test_data)
 def test_overlap_edge_values(x, y, edge, expected, overlapping_grid):
     actual = overlapping_grid.edge(x, y, edge)
     assert actual.tolist() == expected

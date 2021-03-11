@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
 tile_image_grid manages a grid of image tiles.
+Copyright 2021, Mitch Chapman  All rights reserved
 """
 
 from enum import Enum
 
+import logging
 import numpy as np
+
+
+def logger():
+    return logging.getLogger(__name__)
 
 
 class Edge(Enum):
@@ -23,11 +29,12 @@ class TileImageGrid:
         w = len(self._xvals)
         h = len(self._yvals)
 
-        # PIL & numpy represent image data as rows x cols x components.
+        # numpy et al represent image data as rows x cols x components.
         # Try to be consistent here.
         grid = self._grid = np.empty((h, w), dtype=object)
         for iy, yval in enumerate(self._yvals):
             for ix, xval in enumerate(self._xvals):
+                logging.debug(f"Add tig entry {(iy, ix)} ({(yval, xval)})")
                 grid[iy, ix] = tiles_by_origin.get((xval, yval))
 
     def as_array(self):
@@ -61,8 +68,8 @@ class TileImageGrid:
             return None
 
         if xgrid <= 0:
-            # All rows, first column -- nothing to overlap.
-            return tile[:, :1]
+            # First column -- nothing to overlap.
+            return None
 
         # By how much do I overlap my left neighbor?
         neighbor = self._grid[ygrid, xgrid - 1]
@@ -79,14 +86,20 @@ class TileImageGrid:
 
     def _edge_right(self, xgrid, ygrid):
         tile = self._grid[ygrid, xgrid]
+        if tile is None:
+            return None
+
         if xgrid >= len(self._xvals) - 1:
-            # All rows, last column -- nothing to overlap
-            return tile[:, -1:]
+            # Last column -- nothing to overlap
+            return None
 
         x_right = self._xvals[xgrid + 1]
         x = self._xvals[xgrid]
-        # Return all rows, overlap columns each
-        return tile[:, (x_right - x):]
+        # Return all rows, overlap columns from each
+        try:
+            return tile[:, (x_right - x):]
+        except IndexError as info:
+            raise SystemExit(f"{info}.  Tile[{ygrid}][{xgrid}] is {tile}.")
 
     def _edge_top(self, xgrid, ygrid):
         tile = self._grid[ygrid, xgrid]
@@ -94,8 +107,8 @@ class TileImageGrid:
             return None
 
         if ygrid <= 0:
-            # first row, all columns - nothing to overlap
-            return tile[:1, :]
+            # first row - nothing to overlap
+            return None
 
         # By how much do I overlap my neighbor?
         neighbor = self._grid[ygrid - 1, xgrid]
@@ -115,7 +128,7 @@ class TileImageGrid:
             return None
 
         if ygrid >= len(self._yvals) - 1:
-            return tile[-1:, :]
+            return None
 
         # By how much do I overlap my neighbor?
         y = self._yvals[ygrid]
@@ -149,9 +162,41 @@ class TileImageGrid:
         """
         tile = self._grid[ygrid, xgrid]
         if tile is None:
+            logger().debug(f"No tile at ({ygrid}, {xgrid})")
             return None
 
         left = self._xvals[xgrid]
         top = self._yvals[ygrid]
         height, width = tile.shape[:2]
         return (tile, (left, top, width, height))
+
+    def tile(self, xgrid, ygrid):
+        """Get the specified tile
+
+        Args:
+            xgrid (int): x index of tile
+            ygrid (int): y index of tile
+
+        Returns:
+            a copy of the requested tile, or None
+        """
+        return self._grid[ygrid, xgrid].copy()
+
+    def set_tile(self, xgrid, ygrid, new_tile_data):
+        """Replace a tile
+
+        Args:
+            xgrid (int): x index of tile to replace
+            ygrid (int): y index of tile to replace
+            new_tile_data: The new data for the indexed tile
+        """
+        curr_val = self._grid[ygrid, xgrid]
+        if curr_val.shape != new_tile_data.shape:
+            logger().warning(
+                f"set_tile: Tile[{ygrid}, {xgrid}] "
+                f"shape was {curr_val.shape}, "
+                f"now is {new_tile_data.shape}"
+            )
+        if new_tile_data.shape == tuple():
+            raise ValueError(f"Invalid tile {new_tile_data}.")
+        self._grid[ygrid, xgrid] = new_tile_data

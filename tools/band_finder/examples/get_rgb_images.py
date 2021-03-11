@@ -6,7 +6,6 @@ Copyright 2021, Mitch Chapman  All rights reserved
 
 from band_finder.image_db import ImageDB
 from band_finder.image_cache import ImageCache
-import datetime
 
 
 def main():

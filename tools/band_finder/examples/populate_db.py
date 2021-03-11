@@ -3,9 +3,6 @@
 Create or update an image database in the current working dir.
 """
 
-import json
-from pathlib import Path
-
 from band_finder.rss_feed import get_rqst_params, get_img_metadata
 from band_finder.image_db import ImageDB
 
