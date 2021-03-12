@@ -1,0 +1,19 @@
+requests ~= 2.25
+Pillow ~= 8.1
+imagehash ~= 4.2
+numpy ~= 1.20
+opencv-python ~= 4.5
+scikit-image ~= 0.18
+
+# For interactive data exploration -- see notebooks directory.
+ipython ~= 7.21
+jupyterlab ~= 3.0
+ipympl ~= 0.6
+nodejs ~= 0.1
+ipyvolume ~= 0.5
+
+# For testing, formatting and refactoring:
+black ~= 20.8b1
+flake8 ~= 3.8
+rope ~= 0.18
+pytest ~= 6.2
