@@ -13,6 +13,7 @@ Copyright 2021, Mitch Chapman  All rights reserved
 
 import requests
 
+# This is almost verbatim from fetch_m20_raw.py.
 INSTRUMENTS = {
     "HAZ_FRONT": [
         "FRONT_HAZCAM_LEFT_A",
@@ -23,7 +24,10 @@ INSTRUMENTS = {
     "HAZ_REAR": ["REAR_HAZCAM_LEFT", "REAR_HAZCAM_RIGHT"],
     "NAVCAM": ["NAVCAM_LEFT", "NAVCAM_RIGHT"],
     "MASTCAM": ["MCZ_LEFT", "MCZ_RIGHT"],
-    "EDLCAM": ["EDL_DDCAM", "EDL_PUCAM1", "EDL_PUCAM2", "EDL_RUCAM"],
+    "EDLCAM": ["EDL_DDCAM", "EDL_PUCAM1", "EDL_PUCAM2", "EDL_RDCAM", "EDL_RUCAM", "LCAM"],
+    # I don't know how these values should be grouped. I just noticed them from a
+    # full, unfiltered RSS feed download.
+    "OTHER": ["SHERLOC_WATSON", "SKYCAM"]
 }
 
 
