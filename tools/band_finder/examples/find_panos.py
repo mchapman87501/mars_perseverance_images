@@ -158,6 +158,7 @@ class PanoFinder:
         FROM Images
         WHERE cam_instrument = ?
           AND sample_type = 'Full'
+          AND image_id LIKE '__E%'
           AND ext_scale_factor = 1.0
           AND x NOT NULL
           AND y NOT NULL
